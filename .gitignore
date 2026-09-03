@@ -1,0 +1,9 @@
+/build/
+/.xmake/
+*.user
+
+# generated project files (embed absolute paths)
+*.vcxproj
+*.vcxproj.filters
+*.sln
+vsxmake*/
