@@ -1,5 +1,23 @@
 #pragma once
 
+// === F4RD RELOCATIONS ========================================================
+// kind  what                                                OG      NG/AE
+// id    BSTScatterTable insert, as called by
+//       BSScaleformTranslator::AddTranslations              266342  2299490
+//
+// Re-derive:
+//   1. The thunk has exactly one caller, the translation-file parser, and that
+//      parser has exactly one caller, which holds "Interface\Translate_%s.txt".
+//   2. Find that literal in the target binary, follow the RIP-relative lea that
+//      loads its address back to the enclosing function via the .pdata table,
+//      then match the call sequence against the AE one - identical but for
+//      addresses.
+//   3. In the parser, the insert is the call immediately after the two
+//      BSFixedStringWCS constructions, with rcx = translator + 0x20.
+//   4. Reverse-map that function start through the legacy OG Address Library
+//      table to get the OG id.
+// =============================================================================
+
 // Scaleform translation loading, which CommonLibF4RD provides none of.
 //
 // Parses the translation file directly - UTF-16LE + BOM, tab between key and value,
@@ -18,6 +36,7 @@
 #include "WattzIO/Logging.h"
 #include "WattzIO/REMissing.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <initializer_list>
@@ -37,14 +56,27 @@ namespace WIO::Translations
 {
 	namespace detail
 	{
-		// BSTScatterTable insert, as called by AddTranslations.
+		// F4RD:id - (OG, AE); NG falls back to the AE value, which is correct here.
+		inline constexpr REL::ID kMapInsert{ 266342, 2299490 };
+
+		// WIO::Reloc::Address resolves through kMapInsert.id() and returns 0 rather than
+		// aborting; REMissing.h documents both. An id with no OG number resolves nowhere
+		// on 1.10.163, so this returns 0 there instead of failing the load.
+		[[nodiscard]] inline std::uintptr_t MapInsertAddress()
+		{
+			static const std::uintptr_t address = WIO::Reloc::Address(kMapInsert);
+			return address;
+		}
+
+		// BSTScatterTable insert, as called by AddTranslations. Callers must check
+		// MapInsertAddress() first.
 		inline void MapInsert(
 			void* a_map,
 			const RE::BSFixedStringWCS& a_key,
 			const RE::BSFixedStringWCS& a_value)
 		{
 			using func_t = void (*)(void*, const RE::BSFixedStringWCS*, const RE::BSFixedStringWCS*);
-			static REL::Relocation<func_t> func{ REL::ID(2299490) };
+			const auto func = reinterpret_cast<func_t>(MapInsertAddress());
 			func(a_map, &a_key, &a_value);
 		}
 
@@ -94,6 +126,13 @@ namespace WIO::Translations
 	// Returns the number of entries registered, or 0 on any failure (which is logged).
 	inline std::size_t LoadFile(const std::filesystem::path& a_path)
 	{
+		if (detail::MapInsertAddress() == 0) {
+			REX::WARN(
+				"Translations: the translation-map insert does not resolve on this runtime - '{}' not loaded",
+				a_path.filename().string());
+			return 0;
+		}
+
 		const auto manager = RE::BSScaleformManager::GetSingleton();
 		const auto translator = RE::GetScaleformTranslator(manager);
 		if (!translator) {

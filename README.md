@@ -12,7 +12,6 @@ Upstream is a nested submodule and is not modified.
 |---|---|
 | `xmake.lua` | Static-library target for upstream. Mirrors its `CMakeLists.txt`. |
 | `compat/WattzIO/` | Declarations and helpers libxse provides and CommonLibF4RD does not |
-| `tools/` | Runtime Database lookups. Not needed to build. |
 | `CommonLibF4RD/` | Upstream, nested submodule |
 
 ## Use
@@ -37,8 +36,8 @@ target("WIO-YourMod")
 #include <WattzIO/Compat.h>
 ```
 
-Record both submodule commits in the consuming project's `source/BUILD.md`; a source
-mirror without a `.git` folder cannot carry them.
+Record both submodule commits somewhere in the consuming project: a copy of this tree
+without its `.git` folder cannot carry them.
 
 ```
 git submodule status --recursive
@@ -70,22 +69,13 @@ Exported PUBLIC, so consuming projects inherit them:
 | `Ole32`, `Shell32` | `F4SE::log::log_directory` needs `SHGetKnownFolderPath` / `CoTaskMemFree` |
 | `/wd4100` | Upstream headers trip it under `allextra` |
 
-## Tools
+## Indexing vtables
 
-Set `F4RD_RUNTIME_BIN` to `<game>/Data/F4SE/Plugins/f4rd-runtime.bin`, or pass
-`--db <path>`.
-
-```
-python tools/f4rd_probe.py 2268334 2234801      # ID -> RVA per runtime
-python tools/f4rd_rlookup.py 0x1da36b0          # RVA -> ID
-python tools/f4rd_vtable_audit.py CommonLibF4RD/CommonLibF4/include/RE
-```
-
-`f4rd_vtable_audit.py` finds upstream classes whose `VTABLE` member names a
-differently-sized array. Currently two: `PlayerCamera` (names `VTABLE::TESCamera`, 1
-entry vs 5) and `TESNPC` (names `VTABLE::TESActorBase`, 14 vs 19). Indexing past the
-end reads out of bounds and resolves a garbage `REL::ID`. **Use `RE::VTABLE::X[n]`
-rather than `RE::X::VTABLE[n]`.** Re-run after updating upstream.
+**Use `RE::VTABLE::X[n]`, not `RE::X::VTABLE[n]`.** Some upstream classes declare a
+`VTABLE` member naming a base's array, which is shorter: `PlayerCamera` names
+`VTABLE::TESCamera` (1 entry against 5) and `TESNPC` names `VTABLE::TESActorBase`
+(14 against 19). Indexing past the end compiles, reads out of bounds and resolves a
+garbage `REL::ID`. Re-check after updating upstream.
 
 ## Runtime requirement
 
@@ -95,5 +85,5 @@ Plugins built against this need the
 
 ## License
 
-MIT, matching upstream. `xmake.lua`, `compat/` and `tools/` are original work;
+MIT, matching upstream. `xmake.lua` and `compat/` are original work;
 CommonLibF4RD is included unmodified under its own license.
